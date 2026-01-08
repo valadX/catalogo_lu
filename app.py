@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import math
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Lanbele Decorações", layout="wide", page_icon="🎈")
@@ -46,6 +47,10 @@ st.markdown("""
         background-color: white;
         color: #5e2d79;
     }
+    /* Estilo dos botões de paginação */
+    .stButton button {
+        border: 1px solid white;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -69,28 +74,35 @@ st.write("")
 # --- LÓGICA DO APP ---
 # ==========================================
 
+# Função com Cache para carregar dados rápido
+@st.cache_data
+def carregar_dados():
+    arquivo_csv = 'base_dados_inteligente.csv'
+    if not os.path.exists(arquivo_csv):
+        arquivo_csv = 'base_dados.csv'
+
+    if os.path.exists(arquivo_csv):
+        df = pd.read_csv(arquivo_csv)
+        if 'oculto' not in df.columns:
+            df['oculto'] = False
+        df['legenda'] = df['legenda'].fillna("") 
+        return df, arquivo_csv
+    return None, None
+
 def salvar_alteracoes(df_novo, nome_arquivo):
     df_novo.to_csv(nome_arquivo, index=False)
+    # Limpa o cache para recarregar os dados novos na próxima vez
+    carregar_dados.clear()
     st.toast("✅ Alterações salvas!", icon="💾")
 
-# --- CARREGAMENTO ---
-arquivo_csv = 'base_dados_inteligente.csv'
-if not os.path.exists(arquivo_csv):
-    arquivo_csv = 'base_dados.csv'
+# --- CARREGAMENTO INICIAL ---
+df, arquivo_csv = carregar_dados()
 
-if os.path.exists(arquivo_csv):
-    df = pd.read_csv(arquivo_csv)
-    
-    if 'oculto' not in df.columns:
-        df['oculto'] = False
-        df.to_csv(arquivo_csv, index=False)
-
-    df['legenda'] = df['legenda'].fillna("") 
-
+if df is not None:
     # --- BARRA LATERAL ---
     st.sidebar.title("⚙️ Filtros & Ajustes")
     
-    # 1. Filtro de Cor (Voltou para a lateral)
+    # 1. Filtro de Cor (Lateral)
     filtro_cor = "Todas"
     if 'cor_predominante' in df.columns:
         lista_cores = sorted([c for c in df['cor_predominante'].unique() if isinstance(c, str)])
@@ -105,19 +117,27 @@ if os.path.exists(arquivo_csv):
     ver_lixeira = st.sidebar.checkbox("🗑️ Lixeira", value=False)
 
     # ==========================================
-    # --- ÁREA DE BUSCA (PRINCIPAL - LIMPA) ---
+    # --- ÁREA DE BUSCA (PRINCIPAL) ---
     # ==========================================
     
     with st.container():
         st.markdown("### 🔍 O que você procura hoje?")
-        # Apenas a barra de busca agora
-        busca = st.text_input("Digite o tema (ex: Sereia, Heróis)", placeholder="Pesquise aqui...")
+        # Callback para resetar a paginação ao fazer uma nova busca
+        def resetar_pagina():
+            st.session_state.pagina_atual = 1
+
+        busca = st.text_input(
+            "Digite o tema (ex: Sereia, Heróis)", 
+            placeholder="Pesquise aqui...",
+            on_change=resetar_pagina # Reseta para pág 1 se digitar algo novo
+        )
 
     st.divider()
 
     # --- FILTRAGEM ---
     resultados = df.copy()
 
+    # Filtro Lixeira
     if ver_lixeira:
         resultados = resultados[resultados['oculto'] == True]
         st.markdown("""
@@ -128,32 +148,58 @@ if os.path.exists(arquivo_csv):
     else:
         resultados = resultados[resultados['oculto'] == False]
 
+    # Filtro Sem Legenda
     if not ver_lixeira and mostrar_sem_legenda:
         resultados = resultados[resultados['legenda'].astype(str).str.len() < 3]
     
+    # Filtros Normais
     if not mostrar_sem_legenda:
         if busca:
             resultados = resultados[resultados['legenda'].astype(str).str.contains(busca, case=False, na=False)]
         if filtro_cor != "Todas":
             resultados = resultados[resultados['cor_predominante'] == filtro_cor]
 
+    # Verifica arquivos físicos
     resultados['existe'] = resultados['caminho_imagem'].apply(os.path.exists)
     resultados = resultados[resultados['existe'] == True]
+
+    # ==========================================
+    # --- LÓGICA DE PAGINAÇÃO (NOVO) ---
+    # ==========================================
+    ITENS_POR_PAGINA = 30
+    
+    if 'pagina_atual' not in st.session_state:
+        st.session_state.pagina_atual = 1
+        
+    total_itens = len(resultados)
+    total_paginas = math.ceil(total_itens / ITENS_POR_PAGINA)
+    
+    # Garante que a página atual é válida
+    if st.session_state.pagina_atual > total_paginas:
+        st.session_state.pagina_atual = max(1, total_paginas)
+        
+    inicio = (st.session_state.pagina_atual - 1) * ITENS_POR_PAGINA
+    fim = inicio + ITENS_POR_PAGINA
+    
+    # Recorta os resultados para mostrar apenas a página atual
+    resultados_pagina = resultados.iloc[inicio:fim]
 
     # --- GALERIA ---
     
     # CONTADOR
-    qtd = len(resultados)
-    if qtd > 0:
-        st.markdown(f"##### 🎉 Encontramos **{qtd}** opções")
+    if total_itens > 0:
+        st.markdown(f"##### 🎉 Encontramos **{total_itens}** opções")
+        if total_paginas > 1:
+            st.caption(f"Mostrando página {st.session_state.pagina_atual} de {total_paginas}")
     else:
         st.info("Nenhuma decoração encontrada com esses filtros.")
 
-    if qtd > 0:
+    if len(resultados_pagina) > 0:
         cols = st.columns(3)
         
-        for index_real, row in resultados.iterrows():
-            col_atual = cols[index_real % 3]
+        # Resetamos o índice para iterar corretamente na página
+        for i, (index_real, row) in enumerate(resultados_pagina.iterrows()):
+            col_atual = cols[i % 3]
             
             with col_atual:
                 with st.container(): 
@@ -215,6 +261,26 @@ if os.path.exists(arquivo_csv):
                         st.error(f"Erro: {e}")
                     
                     st.markdown('</div>', unsafe_allow_html=True)
+
+        # --- CONTROLES DE PAGINAÇÃO (RODAPÉ) ---
+        if total_paginas > 1:
+            st.divider()
+            col_prev, col_info, col_next = st.columns([1, 2, 1])
+            
+            with col_prev:
+                if st.session_state.pagina_atual > 1:
+                    if st.button("⬅️ Anterior", use_container_width=True):
+                        st.session_state.pagina_atual -= 1
+                        st.rerun()
+            
+            with col_info:
+                st.markdown(f"<div style='text-align: center; padding-top: 10px;'>Página <b>{st.session_state.pagina_atual}</b> de <b>{total_paginas}</b></div>", unsafe_allow_html=True)
+                
+            with col_next:
+                if st.session_state.pagina_atual < total_paginas:
+                    if st.button("Próxima ➡️", use_container_width=True):
+                        st.session_state.pagina_atual += 1
+                        st.rerun()
 
 else:
     st.error("Arquivo de dados não encontrado.")
