@@ -24,6 +24,11 @@ st.markdown("""
     input[type="text"] {
         color: #31333F !important; 
     }
+    /* Cor dos textos dos filtros */
+    label {
+        color: #ffffff !important;
+        font-weight: bold;
+    }
     h1, h2, h3, p, h4 {
         color: #ffffff !important;
     }
@@ -53,13 +58,11 @@ col_esq, col_centro, col_dir = st.columns([1, 4, 1])
 
 with col_centro:
     try:
-        # VOLTAMOS PARA O COMANDO SEGURO: use_container_width=True
         st.image(logo_url, use_container_width=True)
     except:
         st.error("Não foi possível carregar o logo.")
         st.title("Catálogo Lanbele")
 
-st.write("") 
 st.write("") 
 
 # ==========================================
@@ -85,13 +88,9 @@ if os.path.exists(arquivo_csv):
     df['legenda'] = df['legenda'].fillna("") 
 
     # --- BARRA LATERAL ---
-    st.sidebar.title("🛠️ Painel de Controle")
+    st.sidebar.title("⚙️ Filtros & Ajustes")
     
-    modo_edicao = st.sidebar.toggle("✏️ Ativar Modo de Edição", value=False)
-    st.sidebar.divider()
-    
-    busca = st.sidebar.text_input("🔍 Buscar tema")
-    
+    # 1. Filtro de Cor (Voltou para a lateral)
     filtro_cor = "Todas"
     if 'cor_predominante' in df.columns:
         lista_cores = sorted([c for c in df['cor_predominante'].unique() if isinstance(c, str)])
@@ -99,8 +98,22 @@ if os.path.exists(arquivo_csv):
         filtro_cor = st.sidebar.selectbox("🎨 Filtrar por Cor", cores_disponiveis)
     
     st.sidebar.divider()
-    mostrar_sem_legenda = st.sidebar.checkbox("⚠️ Mostrar apenas SEM legenda", value=False)
-    ver_lixeira = st.sidebar.checkbox("🗑️ Ver Lixeira / Itens Ocultos", value=False)
+    
+    # 2. Configurações
+    modo_edicao = st.sidebar.toggle("✏️ Modo Edição", value=False)
+    mostrar_sem_legenda = st.sidebar.checkbox("⚠️ Sem legenda", value=False)
+    ver_lixeira = st.sidebar.checkbox("🗑️ Lixeira", value=False)
+
+    # ==========================================
+    # --- ÁREA DE BUSCA (PRINCIPAL - LIMPA) ---
+    # ==========================================
+    
+    with st.container():
+        st.markdown("### 🔍 O que você procura hoje?")
+        # Apenas a barra de busca agora
+        busca = st.text_input("Digite o tema (ex: Sereia, Heróis)", placeholder="Pesquise aqui...")
+
+    st.divider()
 
     # --- FILTRAGEM ---
     resultados = df.copy()
@@ -109,7 +122,7 @@ if os.path.exists(arquivo_csv):
         resultados = resultados[resultados['oculto'] == True]
         st.markdown("""
             <div style='padding: 10px; background-color: #ff4b4b; color: white; border-radius: 5px; margin-bottom: 10px;'>
-            🗑️ <b>Você está vendo a LIXEIRA.</b> Esses itens NÃO aparecem para o cliente.
+            🗑️ <b>LIXEIRA:</b> Esses itens estão ocultos do cliente.
             </div>
         """, unsafe_allow_html=True)
     else:
@@ -128,14 +141,13 @@ if os.path.exists(arquivo_csv):
     resultados = resultados[resultados['existe'] == True]
 
     # --- GALERIA ---
-    st.divider()
     
     # CONTADOR
     qtd = len(resultados)
     if qtd > 0:
-        st.markdown(f"### 🎉 Encontramos **{qtd}** decorações")
+        st.markdown(f"##### 🎉 Encontramos **{qtd}** opções")
     else:
-        st.info("Nenhuma decoração encontrada.")
+        st.info("Nenhuma decoração encontrada com esses filtros.")
 
     if qtd > 0:
         cols = st.columns(3)
@@ -148,7 +160,6 @@ if os.path.exists(arquivo_csv):
                     st.markdown('<div style="background-color: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-bottom: 20px;">', unsafe_allow_html=True)
                     
                     try:
-                        # AQUI TAMBÉM VOLTAMOS PARA O SEGURO
                         st.image(row['caminho_imagem'], use_container_width=True)
                         
                         legenda_atual = str(row['legenda'])
